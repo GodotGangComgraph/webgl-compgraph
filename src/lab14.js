@@ -338,7 +338,6 @@ const camera = new Camera([0.0, 0.0, 5.0]);
     in vec2 vTexCoord;
     in vec3 viewDir;
 
-    // Light properties
     struct Light {
         vec3 position;
         vec3 direction;
@@ -351,22 +350,16 @@ const camera = new Camera([0.0, 0.0, 5.0]);
     uniform Light uDirLight;
     uniform Light uSpotLight;
 
-    // Texture samplers
     uniform sampler2D uTexture;
 
-    // Shading mode
     uniform int uShadingMode;
 
-    // Specular shininess parameter for Phong shading
     uniform float uShininess;
 
-    // Oren-Nayar roughness parameter
     uniform float uRoughness;
 
-    // Outputs
     out vec4 FragColor;
 
-    // Calculate Phong shading
     vec3 phongShading(vec3 lightDir, vec3 normal, vec3 lightColor, float intensity, float attenuation) {
         vec3 ambient = 0.1 * lightColor;
 
@@ -380,7 +373,6 @@ const camera = new Camera([0.0, 0.0, 5.0]);
         return ambient + diffuse * attenuation + specular * attenuation;
     }
 
-    // Toon shading
     float toonShade(vec3 normal, vec3 lightDir) {
         float intensity = max(dot(normal, lightDir), 0.0);
         if (intensity > 0.9) return 1.0;
@@ -389,7 +381,6 @@ const camera = new Camera([0.0, 0.0, 5.0]);
         else return 0.2;
     }
 
-    // Oren-Nayar diffuse shading
     vec3 orenNayarShade(vec3 lightDir, vec3 viewDir, vec3 normal, vec3 lightColor, float intensity, float roughness) {
         float sigma2 = roughness * roughness;
         float A = 1.0 - 0.5 * (sigma2 / (sigma2 + 0.33));
@@ -411,7 +402,6 @@ const camera = new Camera([0.0, 0.0, 5.0]);
         return lightColor * NdotL * intensity * diffuse;
     }
 
-    // Spotlight contribution
     vec3 spotlightEffect(vec3 lightDir, vec3 normal, vec3 lightColor, float intensity, float cutoff) {
         float theta = dot(lightDir, normalize(-uSpotLight.direction));
         if (theta > cutoff) {
