@@ -220,15 +220,20 @@ export class Object3D {
         gl.uniform1f(dirLightLoc.intensity, 0.8);                 // Intensity
 
         // Set values for Spotlight
-        gl.uniform3fv(spotLightLoc.position, [2.0, 4.0, 2.0]);    // Position
-        gl.uniform3fv(spotLightLoc.direction, [-1.0, -1.0, -1.0]);// Direction
+        gl.uniform3fv(spotLightLoc.position, camera.position); // Spotlight originates from the camera's position
+        gl.uniform3fv(spotLightLoc.direction, camera.front);  // Spotlight points in the camera's front direction
+
         gl.uniform3fv(spotLightLoc.color, [1.0, 0.0, 1.0]);       // Color
         gl.uniform1f(spotLightLoc.intensity, 2.0);                // Intensity
-        gl.uniform1f(spotLightLoc.cutoff, Math.cos(Math.PI / 12)); // Spotlight cutoff (30 degrees)
+        gl.uniform1f(spotLightLoc.cutoff, Math.cos(Math.PI / 24)); // Spotlight cutoff (30 degrees)
 
         gl.uniform1i(gl.getUniformLocation(this.program, "uShadingMode"), shadingMode);
 
         gl.uniform3fv(gl.getUniformLocation(this.program, "uViewPos"), camera.position);
+
+        gl.uniform1f(gl.getUniformLocation(this.program, "uRoughness"), 0.5);
+        gl.uniform1f(gl.getUniformLocation(this.program, "uShininess"), 32);
+
 
         gl.bindVertexArray(this.vao);
         gl.bindTexture(gl.TEXTURE_2D, this.texture);
@@ -261,38 +266,38 @@ const camera = new Camera([0.0, 0.0, 5.0]);
     /** @type {WebGL2RenderingContext} */
     const gl = canvas.getContext("webgl2");
 
-     // Position at (0, 0, 5)
+    // Position at (0, 0, 5)
     const projectionMatrix = mat4.create(); // For perspective projection
     const modelMatrix = mat4.create();
     //mat4.identity(modelMatrix, modelMatrix);
 
     mat4.perspective(
-    projectionMatrix,
-    Math.PI / 4, // 45 degrees field of view
-    canvas.width / canvas.height, // Aspect ratio
-    0.1, // Near plane
-    100.0 // Far plane
+        projectionMatrix,
+        Math.PI / 4, // 45 degrees field of view
+        canvas.width / canvas.height, // Aspect ratio
+        0.1, // Near plane
+        100.0 // Far plane
     );
 
     const keys = {};
     window.addEventListener("keydown", (e) => {
-    keys[e.key] = true;
+        keys[e.key] = true;
     });
     window.addEventListener("keyup", (e) => {
-    keys[e.key] = false;
+        keys[e.key] = false;
     });
 
     function update(deltaTime) {
-    if (keys["w"]) camera.processKeyboard("FORWARD", deltaTime);
-    if (keys["s"]) camera.processKeyboard("BACKWARD", deltaTime);
-    if (keys["a"]) camera.processKeyboard("LEFT", deltaTime);
-    if (keys["d"]) camera.processKeyboard("RIGHT", deltaTime);
-    if (keys["q"]) camera.processKeyboard("UP", deltaTime);
-    if (keys["e"]) camera.processKeyboard("DOWN", deltaTime);
+        if (keys["w"]) camera.processKeyboard("FORWARD", deltaTime);
+        if (keys["s"]) camera.processKeyboard("BACKWARD", deltaTime);
+        if (keys["a"]) camera.processKeyboard("LEFT", deltaTime);
+        if (keys["d"]) camera.processKeyboard("RIGHT", deltaTime);
+        if (keys["q"]) camera.processKeyboard("UP", deltaTime);
+        if (keys["e"]) camera.processKeyboard("DOWN", deltaTime);
     }
 
     document.body.addEventListener("mousemove", function (event) {
-    camera.processMouseMovement(event.movementX, -event.movementY);
+        camera.processMouseMovement(event.movementX, -event.movementY);
     });
 
     if (!gl) {
@@ -333,7 +338,6 @@ const camera = new Camera([0.0, 0.0, 5.0]);
     in vec2 vTexCoord;
     in vec3 viewDir;
 
-
     // Light properties
     struct Light {
         vec3 position;
@@ -353,9 +357,30 @@ const camera = new Camera([0.0, 0.0, 5.0]);
     // Shading mode
     uniform int uShadingMode;
 
+    // Specular shininess parameter for Phong shading
+    uniform float uShininess;
+
+    // Oren-Nayar roughness parameter
+    uniform float uRoughness;
+
     // Outputs
     out vec4 FragColor;
 
+    // Calculate Phong shading
+    vec3 phongShading(vec3 lightDir, vec3 normal, vec3 lightColor, float intensity, float attenuation) {
+        vec3 ambient = 0.1 * lightColor;
+
+        float NdotL = max(dot(normal, lightDir), 0.0);
+        vec3 diffuse = lightColor * NdotL * intensity;
+
+        vec3 reflectDir = reflect(-lightDir, normal);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), uShininess);
+        vec3 specular = lightColor * spec * intensity;
+
+        return ambient + diffuse * attenuation + specular * attenuation;
+    }
+
+    // Toon shading
     float toonShade(vec3 normal, vec3 lightDir) {
         float intensity = max(dot(normal, lightDir), 0.0);
         if (intensity > 0.9) return 1.0;
@@ -364,65 +389,97 @@ const camera = new Camera([0.0, 0.0, 5.0]);
         else return 0.2;
     }
 
+    // Oren-Nayar diffuse shading
+    vec3 orenNayarShade(vec3 lightDir, vec3 viewDir, vec3 normal, vec3 lightColor, float intensity, float roughness) {
+        float sigma2 = roughness * roughness;
+        float A = 1.0 - 0.5 * (sigma2 / (sigma2 + 0.33));
+        float B = 0.45 * (sigma2 / (sigma2 + 0.09));
+
+        float NdotL = max(dot(normal, lightDir), 0.0);
+        float NdotV = max(dot(normal, viewDir), 0.0);
+
+        vec3 H = normalize(lightDir + viewDir);
+        float gamma = max(dot(lightDir - normal * NdotL, viewDir - normal * NdotV), 0.0);
+
+        float theta_r = acos(NdotV);
+        float theta_i = acos(NdotL);
+
+        float alpha = max(theta_r, theta_i);
+        float beta = min(theta_r, theta_i);
+
+        float diffuse = A + B * gamma * sin(alpha) * tan(beta);
+        return lightColor * NdotL * intensity * diffuse;
+    }
+
+    // Spotlight contribution
+    vec3 spotlightEffect(vec3 lightDir, vec3 normal, vec3 lightColor, float intensity, float cutoff) {
+        float theta = dot(lightDir, normalize(-uSpotLight.direction));
+        if (theta > cutoff) {
+            float diff = max(dot(normal, lightDir), 0.0);
+            return lightColor * diff * intensity;
+        }
+        return vec3(0.0);
+    }
+
     void main() {
         vec4 texColor = texture(uTexture, vTexCoord);
-
         vec3 resultColor = vec3(0.0);
+
+        vec3 normal = normalize(vNormal);
 
         // Point Light
         vec3 lightDir = normalize(uPointLight.position - vFragPos);
-        float diff = max(dot(vNormal, lightDir), 0.0);
         float len = length(lightDir);
         float attenuation = 1.0 / (uPointLight.attenuation[0] + uPointLight.attenuation[1] * len + uPointLight.attenuation[2] * len * len);
-        vec3 pointLightColor = uPointLight.color * diff * uPointLight.intensity * attenuation;
 
         // Directional Light
-        lightDir = normalize(-uDirLight.direction);
-        diff = max(dot(vNormal, lightDir), 0.0);
-        vec3 dirLightColor = uDirLight.color * diff * uDirLight.intensity;
+        vec3 dirLightDir = normalize(-uDirLight.direction);
 
         // Spotlight
-        lightDir = normalize(uSpotLight.position - vFragPos);
-        float theta = dot(lightDir, normalize(-uSpotLight.direction));
-        if (theta > uSpotLight.cutoff) {
-            diff = max(dot(vNormal, lightDir), 0.0);
-            vec3 spotLightColor = uSpotLight.color * diff * uSpotLight.intensity;
-            resultColor += spotLightColor;
-        }
+        vec3 spotLightDir = normalize(uSpotLight.position - vFragPos);
+        len = length(spotLightDir);
 
         if (uShadingMode == 0) {
-            resultColor += pointLightColor + dirLightColor;
-        }
-        else if (uShadingMode == 1) {
-            float toon = toonShade(vNormal, lightDir);
+            // Phong shading
+            resultColor += phongShading(lightDir, normal, uPointLight.color, uPointLight.intensity, attenuation);
+            resultColor += phongShading(dirLightDir, normal, uDirLight.color, uDirLight.intensity, 1.0);
+
+            vec3 spotlightColor = spotlightEffect(spotLightDir, normal, uSpotLight.color, uSpotLight.intensity, uSpotLight.cutoff);
+            resultColor += spotlightColor;
+        } else if (uShadingMode == 1) {
+            // Toon shading
+            float toon = toonShade(normal, lightDir);
             resultColor += uPointLight.color * toon * uPointLight.intensity;
-        }
-        else if (uShadingMode == 2) {
-            resultColor += pointLightColor * 0.5 + dirLightColor * 0.5;
+            resultColor += uDirLight.color * toonShade(normal, dirLightDir) * uDirLight.intensity;
+            resultColor += uSpotLight.color * toonShade(normal, spotLightDir) * uSpotLight.intensity * (dot(spotLightDir, -uSpotLight.direction) > uSpotLight.cutoff ? 1.0 : 0.0);
+        } else if (uShadingMode == 2) {
+            // Oren-Nayar shading
+            resultColor += orenNayarShade(lightDir, viewDir, normal, uPointLight.color, uPointLight.intensity, uRoughness) * attenuation;
+            resultColor += orenNayarShade(dirLightDir, viewDir, normal, uDirLight.color, uDirLight.intensity, uRoughness);
+            resultColor += orenNayarShade(spotLightDir, viewDir, normal, uSpotLight.color, uSpotLight.intensity, uRoughness) * spotlightEffect(spotLightDir, normal, vec3(1.0), 1.0, uSpotLight.cutoff).x;
         }
 
         FragColor = vec4(resultColor * texColor.rgb, texColor.a);
-    }`;
-
+    }
+    `;
 
     const program = createProgram(gl, vertexShaderSource, fragmentShaderSource);
 
     // Load the cat model
-    const kowalskiResponse = await fetch("../models/Kowalski.obj");
+    const kowalskiResponse = await fetch("../models/cat.obj");
     const kowalskiObjData = await kowalskiResponse.text();
-    const kowalski = new Object3D(gl, program, kowalskiObjData, "../images/Kowalski.png", 0.2);
-
+    const kowalski = new Object3D(gl, program, kowalskiObjData, "../images/texture.png", 3);
     const privateResponse = await fetch("../models/Private.obj");
     const privateObjData = await privateResponse.text();
     const private_ = new Object3D(gl, program, privateObjData, "../images/Private.png", 0.2);
 
-    const ricoResponse = await fetch("../models/Rico.obj");
+    const ricoResponse = await fetch("../models/cat.obj");
     const ricoObjData = await ricoResponse.text();
-    const rico = new Object3D(gl, program, ricoObjData, "../images/Rico.png", 0.2);
+    const rico = new Object3D(gl, program, ricoObjData, "../images/texture.png", 3);
 
-    const skipperResponse = await fetch("../models/Skipper.obj");
+    const skipperResponse = await fetch("../models/cat.obj");
     const skipperObjData = await skipperResponse.text();
-    const skipper = new Object3D(gl, program, skipperObjData, "../images/Skipper.png", 0.2);
+    const skipper = new Object3D(gl, program, skipperObjData, "../images/texture.png", 3);
 
     const mauriceResponse = await fetch("../models/Maurice.obj");
     const mauriceObjData = await mauriceResponse.text();
@@ -440,7 +497,7 @@ const camera = new Camera([0.0, 0.0, 5.0]);
     var modelMatrices = [];
     for (let index = 0; index < 7; index++) {
         modelMatrices.push(mat4.create());
-        mat4.translate(modelMatrices[index], modelMatrix, [index*2, 0, 0]);
+        mat4.translate(modelMatrices[index], modelMatrix, [index * 2, 0, 0]);
     }
 
     function render() {
@@ -475,10 +532,10 @@ const camera = new Camera([0.0, 0.0, 5.0]);
 
         maurice.render(modelMatrices[6], viewMatrix, projectionMatrix, 2)
 
+        rico.render(modelMatrices[3], viewMatrix, projectionMatrix, 0);
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         //gl.depthMask(false);
-        rico.render(modelMatrices[3], viewMatrix, projectionMatrix, 0);
         //gl.depthMask(true);
 
         requestAnimationFrame(render);
