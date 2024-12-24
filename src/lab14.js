@@ -208,24 +208,25 @@ export class Object3D {
             cutoff: gl.getUniformLocation(this.program, "uSpotLight.cutoff"),
         };
 
+
         // Set values for Point Light
-        gl.uniform3fv(pointLightLoc.position, [1.0, 2.0, 3.0]);  // Position
+        gl.uniform3fv(pointLightLoc.position, pointLightPosition);  // Position
         gl.uniform3fv(pointLightLoc.color, [0.0, 1.0, 1.0]);     // Color
-        gl.uniform1f(pointLightLoc.intensity, 1.5);              // Intensity
+        gl.uniform1f(pointLightLoc.intensity, pointLightIntensity);              // Intensity
         gl.uniform3fv(pointLightLoc.attenuation, [1.0, 0.09, 0.032]); // Attenuation
 
         // Set values for Directional Light
-        gl.uniform3fv(dirLightLoc.direction, [-0.5, -1.0, -0.5]); // Direction
+        gl.uniform3fv(dirLightLoc.direction, dirLightDirection); // Direction
         gl.uniform3fv(dirLightLoc.color, [0.7, 0.0, 0.0]);        // Color
-        gl.uniform1f(dirLightLoc.intensity, 0.8);                 // Intensity
+        gl.uniform1f(dirLightLoc.intensity, dirLightIntensity);                 // Intensity
 
         // Set values for Spotlight
         gl.uniform3fv(spotLightLoc.position, camera.position); // Spotlight originates from the camera's position
         gl.uniform3fv(spotLightLoc.direction, camera.front);  // Spotlight points in the camera's front direction
 
         gl.uniform3fv(spotLightLoc.color, [1.0, 0.0, 1.0]);       // Color
-        gl.uniform1f(spotLightLoc.intensity, 2.0);                // Intensity
-        gl.uniform1f(spotLightLoc.cutoff, Math.cos(Math.PI / 24)); // Spotlight cutoff (30 degrees)
+        gl.uniform1f(spotLightLoc.intensity, spotLightIntensity);                // Intensity
+        gl.uniform1f(spotLightLoc.cutoff, spotLightCutoff); // Spotlight cutoff (30 degrees)
 
         gl.uniform1i(gl.getUniformLocation(this.program, "uShadingMode"), shadingMode);
 
@@ -248,6 +249,14 @@ document.addEventListener("click", function () {
 });
 
 const camera = new Camera([0.0, 0.0, 5.0]);
+
+var pointLightPosition = [1.0, 2.0, 3.0];
+var pointLightIntensity = 1.5;
+var dirLightIntensity = 0.8;
+var spotLightIntensity = 2.0;
+var dirLightDirection = [-0.5, -1.0, -0.5];
+var spotLightCutoff = Math.cos(Math.PI / 24);
+
 
 (async () => {
     function resizeCanvasToDisplaySize(canvas) {
@@ -287,6 +296,18 @@ const camera = new Camera([0.0, 0.0, 5.0]);
         keys[e.key] = false;
     });
 
+    function clamp(value, change) {
+        if (value + change > 0) {
+            return value + change
+        }
+        else {
+            return 0;
+        }
+    }
+
+
+    var mode = false;
+
     function update(deltaTime) {
         if (keys["w"]) camera.processKeyboard("FORWARD", deltaTime);
         if (keys["s"]) camera.processKeyboard("BACKWARD", deltaTime);
@@ -294,6 +315,45 @@ const camera = new Camera([0.0, 0.0, 5.0]);
         if (keys["d"]) camera.processKeyboard("RIGHT", deltaTime);
         if (keys["q"]) camera.processKeyboard("UP", deltaTime);
         if (keys["e"]) camera.processKeyboard("DOWN", deltaTime);
+
+        if (keys["ArrowLeft"]) pointLightIntensity = clamp(pointLightIntensity,-deltaTime);
+        if (keys["ArrowRight"]) pointLightIntensity = clamp(pointLightIntensity, deltaTime);
+
+        if (keys["ArrowUp"]) dirLightIntensity = clamp(dirLightIntensity, deltaTime);
+        if (keys["ArrowDown"]) dirLightIntensity = clamp(dirLightIntensity, -deltaTime);
+
+        if (keys["1"]) spotLightIntensity = clamp(spotLightIntensity, -deltaTime);
+        if (keys["3"]) spotLightIntensity = clamp(spotLightIntensity, deltaTime);
+
+        if (keys["+"]) spotLightCutoff -= 0.1*deltaTime;
+        if (keys["-"]) spotLightCutoff += 0.1*deltaTime;
+
+        let front = vec3.fromValues(0, 0, 1);
+        let up = vec3.fromValues(0, 1, 0);
+        let right = vec3.fromValues(1, 0, 0);
+
+        let velocity = 1.0 * deltaTime;
+        let movement = vec3.create();
+
+        if (keys["i"]) mode=true;
+        if (keys["o"]) mode=false;
+
+        if (keys["8"]) vec3.scaleAndAdd(movement, movement, front, velocity);
+        if (keys["5"]) vec3.scaleAndAdd(movement, movement, front, -velocity);
+        if (keys["4"]) vec3.scaleAndAdd(movement, movement, right, -velocity);
+        if (keys["6"]) vec3.scaleAndAdd(movement, movement, right, velocity);
+        if (keys["9"]) vec3.scaleAndAdd(movement, movement, up, velocity);
+        if (keys["7"]) vec3.scaleAndAdd(movement, movement, up, -velocity);
+
+        
+        if (mode) {
+            vec3.add(pointLightPosition, pointLightPosition, movement);
+        } else {
+            vec3.add(dirLightDirection, dirLightDirection, movement);
+        }
+
+        //console.log(1, dirLightDirection)
+        //console.log(2, pointLightPosition)
     }
 
     document.body.addEventListener("mousemove", function (event) {
