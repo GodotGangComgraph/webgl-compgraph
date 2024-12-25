@@ -206,27 +206,28 @@ export class Object3D {
             color: gl.getUniformLocation(this.program, "uSpotLight.color"),
             intensity: gl.getUniformLocation(this.program, "uSpotLight.intensity"),
             cutoff: gl.getUniformLocation(this.program, "uSpotLight.cutoff"),
+            attenuation: gl.getUniformLocation(this.program, "uSpotLight.attenuation")
         };
 
 
         // Set values for Point Light
-        gl.uniform3fv(pointLightLoc.position, pointLightPosition);  // Position
-        gl.uniform3fv(pointLightLoc.color, [0.0, 1.0, 1.0]);     // Color
-        gl.uniform1f(pointLightLoc.intensity, pointLightIntensity);              // Intensity
-        gl.uniform3fv(pointLightLoc.attenuation, [1.0, 0.09, 0.032]); // Attenuation
+        gl.uniform3fv(pointLightLoc.position, pointLightPosition);
+        gl.uniform3fv(pointLightLoc.color, [0.0, 1.0, 1.0]);
+        gl.uniform1f(pointLightLoc.intensity, pointLightIntensity);
+        gl.uniform3fv(pointLightLoc.attenuation, [1.0, 0.2, 0.7]);
 
         // Set values for Directional Light
-        gl.uniform3fv(dirLightLoc.direction, dirLightDirection); // Direction
-        gl.uniform3fv(dirLightLoc.color, [0.7, 0.0, 0.0]);        // Color
-        gl.uniform1f(dirLightLoc.intensity, dirLightIntensity);                 // Intensity
+        gl.uniform3fv(dirLightLoc.direction, dirLightDirection);
+        gl.uniform3fv(dirLightLoc.color, [0.7, 0.0, 0.0]);
+        gl.uniform1f(dirLightLoc.intensity, dirLightIntensity);
 
         // Set values for Spotlight
-        gl.uniform3fv(spotLightLoc.position, camera.position); // Spotlight originates from the camera's position
-        gl.uniform3fv(spotLightLoc.direction, camera.front);  // Spotlight points in the camera's front direction
-
-        gl.uniform3fv(spotLightLoc.color, [1.0, 0.0, 1.0]);       // Color
-        gl.uniform1f(spotLightLoc.intensity, spotLightIntensity);                // Intensity
-        gl.uniform1f(spotLightLoc.cutoff, spotLightCutoff); // Spotlight cutoff (30 degrees)
+        gl.uniform3fv(spotLightLoc.position, camera.position);
+        gl.uniform3fv(spotLightLoc.direction, camera.front);
+        gl.uniform3fv(spotLightLoc.color, [1.0, 0.0, 1.0]);
+        gl.uniform1f(spotLightLoc.intensity, spotLightIntensity);
+        gl.uniform1f(spotLightLoc.cutoff, spotLightCutoff);
+        gl.uniform3fv(spotLightLoc.attenuation, [1.0, 0.2, 0.7]);
 
         gl.uniform1i(gl.getUniformLocation(this.program, "uShadingMode"), shadingMode);
 
@@ -345,7 +346,7 @@ var spotLightCutoff = Math.cos(Math.PI / 24);
         if (keys["9"]) vec3.scaleAndAdd(movement, movement, up, velocity);
         if (keys["7"]) vec3.scaleAndAdd(movement, movement, up, -velocity);
 
-        
+
         if (mode) {
             vec3.add(pointLightPosition, pointLightPosition, movement);
         } else {
@@ -488,6 +489,7 @@ var spotLightCutoff = Math.cos(Math.PI / 24);
         // Spotlight
         vec3 spotLightDir = normalize(uSpotLight.position - vFragPos);
         len = length(spotLightDir);
+        float attenuationSpotlight = 1.0 / (uSpotLight.attenuation[0] * len + uSpotLight.attenuation[1] * len * len + uSpotLight.attenuation[2]  * len * len * len);
 
         if (uShadingMode == 0) {
             // Phong shading
@@ -495,18 +497,18 @@ var spotLightCutoff = Math.cos(Math.PI / 24);
             resultColor += phongShading(dirLightDir, normal, uDirLight.color, uDirLight.intensity, 1.0);
 
             vec3 spotlightColor = spotlightEffect(spotLightDir, normal, uSpotLight.color, uSpotLight.intensity, uSpotLight.cutoff);
-            resultColor += spotlightColor;
+            resultColor += spotlightColor * attenuationSpotlight;
         } else if (uShadingMode == 1) {
             // Toon shading
             float toon = toonShade(normal, lightDir);
-            resultColor += uPointLight.color * toon * uPointLight.intensity;
+            resultColor += uPointLight.color * toon * uPointLight.intensity * attenuation;
             resultColor += uDirLight.color * toonShade(normal, dirLightDir) * uDirLight.intensity;
-            resultColor += uSpotLight.color * toonShade(normal, spotLightDir) * uSpotLight.intensity * (dot(spotLightDir, -uSpotLight.direction) > uSpotLight.cutoff ? 1.0 : 0.0);
+            resultColor += uSpotLight.color * toonShade(normal, spotLightDir) * uSpotLight.intensity * (dot(spotLightDir, -uSpotLight.direction) > uSpotLight.cutoff ? 1.0 : 0.0) * attenuationSpotlight;
         } else if (uShadingMode == 2) {
             // Oren-Nayar shading
             resultColor += orenNayarShade(lightDir, viewDir, normal, uPointLight.color, uPointLight.intensity, uRoughness) * attenuation;
             resultColor += orenNayarShade(dirLightDir, viewDir, normal, uDirLight.color, uDirLight.intensity, uRoughness);
-            resultColor += orenNayarShade(spotLightDir, viewDir, normal, uSpotLight.color, uSpotLight.intensity, uRoughness) * spotlightEffect(spotLightDir, normal, vec3(1.0), 1.0, uSpotLight.cutoff).x;
+            resultColor += orenNayarShade(spotLightDir, viewDir, normal, uSpotLight.color, uSpotLight.intensity, uRoughness) * spotlightEffect(spotLightDir, normal, vec3(1.0), 1.0, uSpotLight.cutoff).x * attenuationSpotlight;
         }
 
         FragColor = vec4(resultColor * texColor.rgb, texColor.a);
@@ -543,6 +545,8 @@ var spotLightCutoff = Math.cos(Math.PI / 24);
     const mortObjData = await mortResponse.text();
     const mort = new Object3D(gl, program, mortObjData, "../images/Mort.png", 0.2);
 
+    const lightSourceData = await fetch("../models/Sphere.obj").then((res) => res.text());
+    const lightSource = new Object3D(gl, program, lightSourceData, "../images/Sphere.png", 0.1);
 
     var modelMatrices = [];
     for (let index = 0; index < 7; index++) {
@@ -583,6 +587,11 @@ var spotLightCutoff = Math.cos(Math.PI / 24);
         maurice.render(modelMatrices[6], viewMatrix, projectionMatrix, 2)
 
         rico.render(modelMatrices[3], viewMatrix, projectionMatrix, 0);
+
+        const lightPos = mat4.create();
+        mat4.translate(lightPos, lightPos, pointLightPosition);
+        lightSource.render(lightPos, viewMatrix, projectionMatrix, 0);
+
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         //gl.depthMask(false);
